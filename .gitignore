@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+**/build/output/
+*.exe
+*.exe.blockmap
+*.asar
+*.asar.gz
+*.zip

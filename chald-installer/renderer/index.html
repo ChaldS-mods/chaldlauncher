@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ChaldLauncher Setup</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body data-theme="teal">
+  <header class="titlebar moveable">
+    <div class="titlebar-brand">
+      <img src="icon.png" class="titlebar-logo" alt="" />
+      <span>ChaldLauncher Setup</span>
+    </div>
+    <div class="titlebar-controls non-moveable">
+      <button class="titlebar-btn" id="btn-min" title="Свернуть">&#xE921;</button>
+      <button class="titlebar-btn titlebar-btn-close" id="btn-close" title="Закрыть">&#xE8BB;</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <!-- Welcome -->
+    <section class="step" data-step="welcome">
+      <div class="hero">
+        <img src="icon.png" class="hero-icon" alt="" />
+        <h1>Добро пожаловать</h1>
+        <p class="muted">Установка ChaldLauncher займёт пару минут.</p>
+      </div>
+      <footer class="step-footer">
+        <div></div>
+        <button class="btn btn-primary" data-next="theme">Далее</button>
+      </footer>
+    </section>
+
+    <!-- Theme -->
+    <section class="step hidden" data-step="theme">
+      <h2>Тема оформления</h2>
+      <p class="muted">Можно сменить позже. Выберите стиль мастера и лаунчера по умолчанию.</p>
+      <div class="theme-grid" id="theme-grid">
+        <button type="button" class="theme-card active" data-theme="teal">
+          <span class="theme-swatch swatch-teal"></span>
+          <span>Teal Dark</span>
+        </button>
+        <button type="button" class="theme-card" data-theme="purple">
+          <span class="theme-swatch swatch-purple"></span>
+          <span>Purple Night</span>
+        </button>
+        <button type="button" class="theme-card" data-theme="ocean">
+          <span class="theme-swatch swatch-ocean"></span>
+          <span>Ocean</span>
+        </button>
+        <button type="button" class="theme-card" data-theme="light">
+          <span class="theme-swatch swatch-light"></span>
+          <span>Light Mica</span>
+        </button>
+      </div>
+      <footer class="step-footer">
+        <button class="btn btn-ghost" data-next="welcome">Назад</button>
+        <button class="btn btn-primary" data-next="account">Далее</button>
+      </footer>
+    </section>
+
+    <!-- Optional account -->
+    <section class="step hidden" data-step="account">
+      <h2>Вход в аккаунт</h2>
+      <p class="muted">Необязательно. Можно войти позже в лаунчере (Microsoft / offline).</p>
+      <div class="account-box">
+        <button type="button" class="btn btn-ms" id="btn-ms-login" disabled title="Вход будет в лаунчере">
+          Войти через Microsoft
+        </button>
+        <p class="muted small">В этой версии вход выполняется уже в ChaldLauncher после установки.</p>
+        <label class="checkbox-row">
+          <input type="checkbox" id="skip-account" checked />
+          Пропустить и продолжить
+        </label>
+      </div>
+      <footer class="step-footer">
+        <button class="btn btn-ghost" data-next="theme">Назад</button>
+        <button class="btn btn-primary" data-next="license">Далее</button>
+      </footer>
+    </section>
+
+    <!-- License -->
+    <section class="step hidden" data-step="license">
+      <h2>Лицензионное соглашение</h2>
+      <div class="license-box">
+        <p>ChaldLauncher распространяется по лицензии MIT.</p>
+        <p>Устанавливая программу, вы соглашаетесь с условиями использования и подтверждаете, что используете лаунчер на свой риск. Copyright © ChaldStudio.</p>
+        <p>Полный текст лицензии доступен в файле LICENSE в каталоге установки.</p>
+      </div>
+      <label class="checkbox-row">
+        <input type="checkbox" id="agree" />
+        Я принимаю условия соглашения
+      </label>
+      <footer class="step-footer">
+        <button class="btn btn-ghost" data-next="account">Назад</button>
+        <button class="btn btn-primary" id="btn-license-next" data-next="path" disabled>Далее</button>
+      </footer>
+    </section>
+
+    <!-- Path -->
+    <section class="step hidden" data-step="path">
+      <h2>Куда установить лаунчер</h2>
+      <p class="muted">Игра будет в отдельной папке: %AppData%\chaldlauncher (не смешивается с exe).</p>
+      <div class="field-row">
+        <input id="install-path" type="text" readonly />
+        <button class="btn btn-secondary" id="btn-browse">Обзор…</button>
+      </div>
+      <label class="checkbox-row"><input type="checkbox" id="opt-desktop" checked /> Ярлык на рабочем столе</label>
+      <label class="checkbox-row"><input type="checkbox" id="opt-startmenu" checked /> Меню «Пуск»</label>
+      <label class="checkbox-row"><input type="checkbox" id="opt-launch" checked /> Запустить после установки</label>
+      <footer class="step-footer">
+        <button class="btn btn-ghost" data-next="license">Назад</button>
+        <button class="btn btn-primary" id="btn-install">Установить</button>
+      </footer>
+    </section>
+
+    <!-- Progress -->
+    <section class="step hidden" data-step="progress">
+      <div class="hero">
+        <img src="icon.png" class="hero-icon spin-slow" alt="" />
+        <h2 id="progress-label">Установка…</h2>
+        <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+        <p class="muted" id="progress-percent">0%</p>
+      </div>
+    </section>
+
+    <!-- Finish -->
+    <section class="step hidden" data-step="finish">
+      <div class="hero">
+        <img src="icon.png" class="hero-icon" alt="" />
+        <h1>Готово!</h1>
+        <p class="muted">Лаунчер установлен. Данные игры: %AppData%\chaldlauncher</p>
+      </div>
+      <footer class="step-footer">
+        <button class="btn btn-ghost" id="btn-open-folder">Открыть папку</button>
+        <button class="btn btn-primary" id="btn-finish">Завершить</button>
+      </footer>
+    </section>
+
+    <!-- Uninstall flows (unchanged structure) -->
+    <section class="step hidden" data-step="uninstall">
+      <div class="hero">
+        <img src="icon.png" class="hero-icon" alt="" />
+        <h1>Удалить ChaldLauncher?</h1>
+        <p class="muted">Будут удалены файлы программы, ярлыки и запись в системе.</p>
+      </div>
+      <footer class="step-footer">
+        <button class="btn btn-ghost" id="btn-cancel-uninstall">Отмена</button>
+        <button class="btn btn-danger" id="btn-confirm-uninstall">Удалить</button>
+      </footer>
+    </section>
+    <section class="step hidden" data-step="uninstall-progress">
+      <div class="hero">
+        <img src="icon.png" class="hero-icon spin-slow" alt="" />
+        <h2 id="uninstall-label">Удаление…</h2>
+        <div class="progress-track"><div class="progress-fill" id="uninstall-fill" style="width:0%"></div></div>
+      </div>
+    </section>
+    <section class="step hidden" data-step="uninstall-finish">
+      <div class="hero">
+        <img src="icon.png" class="hero-icon" alt="" />
+        <h1>ChaldLauncher удалён</h1>
+        <p class="muted">Спасибо, что пользовались нашим лаунчером.</p>
+      </div>
+      <footer class="step-footer">
+        <div></div>
+        <button class="btn btn-primary" id="btn-close-uninstall">Закрыть</button>
+      </footer>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

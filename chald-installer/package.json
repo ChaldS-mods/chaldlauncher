@@ -1,0 +1,20 @@
+{
+  "name": "chald-installer",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Custom setup wizard for ChaldLauncher (built in-house, no Inno Setup / NSIS)",
+  "main": "main/index.js",
+  "author": "ChaldStudio",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron .",
+    "pack": "node build/prepare-payload.js && electron-builder --config build/electron-builder.config.js"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16"
+  }
+}

@@ -1,0 +1,366 @@
+/* eslint-disable n/no-unsupported-features/node-builtins */
+/* eslint-disable camelcase */
+export interface XBoxResponse {
+  IssueInstant: string
+  NotAfter: string
+  Token: string
+  DisplayClaims: {
+    xui: [
+      {
+        /**
+         * gamer tag
+         */
+        gtg: string
+        /**
+         * user id
+         */
+        xid: string
+        uhs: string
+      },
+    ]
+  }
+}
+
+export interface XBoxPresenceRecord {
+  xuid: string
+  state: 'Online' | 'Offline' | 'Away' | string
+  devices?: Array<{
+    type: string
+    titles?: Array<{
+      id: number
+      name: string
+      placement?: string
+      state?: string
+    }>
+  }>
+}
+
+export interface XBoxPresenceResponse {
+  userPresence?: XBoxPresenceRecord[]
+}
+
+export interface XBoxGameProfileResponse {
+  profileUsers: [
+    {
+      id: string
+      hostId: string | null
+      settings: [
+        {
+          id: 'Gamertag'
+          value: string
+        },
+        {
+          id: 'PublicGamerpic'
+          value: string
+        },
+      ]
+      isSponsoredUser: boolean
+    },
+  ]
+}
+
+export interface MinecraftAuthResponse {
+  username: string // this is not the uuid of the account
+  roles: []
+  access_token: string // jwt, your good old minecraft access token
+  token_type: 'Bearer'
+  expires_in: number
+}
+
+export interface MicrosoftAuthenticatorOptions {
+  fetch?: typeof fetch
+}
+
+/**
+  * Thrown by {@link MicrosoftAuthenticator.loginMinecraftWithXBox} when the
+  * Minecraft auth endpoint returns a non-200 response. Carries enough
+  * context that the launcher can tell the user *exactly* what went wrong
+  * instead of a generic "loginMinecraftByXboxFailed" (see issue #1445).
+  *
+  * Retry semantics (for 408/425/429/5xx) are intentionally out of scope of
+  * this module -- compose them on the caller side by wrapping the injected
+  * `fetch` (see ``xmcl-runtime/user/utils/withRetry.ts`` in the launcher).
+  */
+export class MicrosoftMinecraftXboxLoginError extends Error {
+  name = 'MicrosoftMinecraftXboxLoginError'
+  constructor(
+    public status: number,
+    public body: string,
+    /** Effective Retry-After in ms from the response header, if any. */
+    public retryAfter?: number,
+    /**
+     * True when the status is in the transient set a retrying client would
+     * normally retry (408/425/429/5xx). Useful to tell the user "try again
+     * in a moment" vs. "this is a permanent error".
+     */
+    public retryable?: boolean,
+  ) {
+    super(`Failed to login minecraft with xbox, status code: ${status}: ${body}}`)
+  }
+}
+
+/**
+ * The microsoft authenticator for Minecraft (Xbox) account.
+ */
+export class MicrosoftAuthenticator {
+  fetch: typeof fetch
+
+  constructor(options?: MicrosoftAuthenticatorOptions) {
+    this.fetch = options?.fetch || fetch
+  }
+
+  /**
+   * Authenticate with xbox live by ms oauth access token
+   * @param oauthAccessToken The oauth access token
+   */
+  async authenticateXboxLive(oauthAccessToken: string, signal?: AbortSignal) {
+    const xblResponse = await this.fetch('https://user.auth.xboxlive.com/user/authenticate', {
+      method: 'POST',
+      body: JSON.stringify({
+        Properties: {
+          AuthMethod: 'RPS',
+          SiteName: 'user.auth.xboxlive.com',
+          RpsTicket: `d=${oauthAccessToken}`,
+        },
+        RelyingParty: 'http://auth.xboxlive.com',
+        TokenType: 'JWT',
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      signal,
+    })
+
+    if (xblResponse.status !== 200) {
+      throw new Error(
+        `Failed to authenticate with xbox live, status code: ${xblResponse.status}: ${await xblResponse.text()}}`,
+      )
+    }
+
+    const result = (await xblResponse.json()) as XBoxResponse
+
+    return result
+  }
+
+  /**
+   * Authorize the xbox live. It will get the xsts token in response.
+   * @param xblResponseToken The {@link XBoxResponse.Token}
+   */
+  async authorizeXboxLive(
+    xblResponseToken: string,
+    relyingParty:
+      | 'rp://api.minecraftservices.com/'
+      | 'http://xboxlive.com' = 'rp://api.minecraftservices.com/',
+    signal?: AbortSignal,
+  ) {
+    const xstsResponse = await this.fetch('https://xsts.auth.xboxlive.com/xsts/authorize', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        Properties: {
+          SandboxId: 'RETAIL',
+          UserTokens: [xblResponseToken],
+        },
+        RelyingParty: relyingParty,
+        TokenType: 'JWT',
+      }),
+      signal,
+    })
+
+    if (xstsResponse.status !== 200) {
+      const errText = await xstsResponse.text()
+      let errObj = {} as any
+      try {
+        errObj = JSON.parse(errText)
+      } catch (e) {}
+      throw Object.assign(
+        new Error(
+          `Failed to authorize with xbox live, status code: ${xstsResponse.status}: ${errText}}`,
+        ),
+        errObj,
+      )
+    }
+
+    const result = (await xstsResponse.json()) as XBoxResponse
+
+    return result
+  }
+
+  /**
+   * Get xbox user profile, including **username** and **avatar**.
+   *
+   * You can find the parameters from the {@link XBoxResponse}.
+   *
+   * @param xuid The `xuid` in a {@link XBoxResponse.DisplayClaims}
+   * @param uhs The `uhs` in a {@link XBoxResponse.DisplayClaims}
+   * @param xstsToken The {@link XBoxResponse.Token}
+   * @returns The user game profile.
+   */
+  async getXboxGameProfile(xuid: string, uhs: string, xstsToken: string, signal?: AbortSignal) {
+    const url = new URL(`https://profile.xboxlive.com/users/xuid(${xuid})/profile/settings`)
+    url.searchParams.append('settings', ['PublicGamerpic', 'Gamertag'].join(','))
+    const response = await this.fetch(url.toString(), {
+      headers: {
+        'x-xbl-contract-version': '2',
+        'content-type': 'application/json',
+        Authorization: `XBL3.0 x=${uhs};${xstsToken}`,
+      },
+      signal,
+    })
+
+    if (response.status !== 200) {
+      throw new Error(
+        `Failed to get xbox game profile, status code: ${response.status}: ${await response.text()}}`,
+      )
+    }
+
+    const result = (await response.json()) as XBoxGameProfileResponse
+    return result
+  }
+
+  /**
+   * Fetch Xbox Live presence status for a list of xuids or single xuid.
+   *
+   * @param xuids Array of Xbox User IDs (xuid)
+   * @param uhs The `uhs` in {@link XBoxResponse.DisplayClaims}
+   * @param xstsToken The {@link XBoxResponse.Token}
+   */
+  async getXboxPresence(xuids: string[], uhs: string, xstsToken: string, signal?: AbortSignal): Promise<XBoxPresenceRecord[]> {
+    if (xuids.length === 0) return []
+    const response = await this.fetch('https://presence.xboxlive.com/users/batch', {
+      method: 'POST',
+      headers: {
+        'x-xbl-contract-version': '3',
+        'content-type': 'application/json',
+        Authorization: `XBL3.0 x=${uhs};${xstsToken}`,
+      },
+      body: JSON.stringify({
+        users: xuids,
+        level: 'all',
+      }),
+      signal,
+    })
+
+    if (response.status !== 200) {
+      return []
+    }
+
+    try {
+      const result = (await response.json()) as XBoxPresenceResponse | XBoxPresenceRecord[]
+      if (Array.isArray(result)) return result
+      if (result && Array.isArray((result as XBoxPresenceResponse).userPresence)) {
+        return (result as XBoxPresenceResponse).userPresence!
+      }
+      return []
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * Acquire both Minecraft and xbox token and xbox game profile.
+   * You can use the xbox token to login Minecraft by {@link loginMinecraftWithXBox}.
+   *
+   * This method is the composition of calling
+   * - {@link authenticateXboxLive}
+   * - {@link authorizeXboxLive} to `rp://api.minecraftservices.com/`
+   * - {@link authorizeXboxLive} to `http://xboxlive.com`
+   * - {@link getXboxGameProfile}
+   *
+   * You can call them individually if you want a more detailed control.
+   *
+   * @param oauthAccessToken The microsoft access token
+   * @param signal The abort signal
+   * @returns The object contain xstsResponse (minecraft xbox token) and xbox game profile
+   */
+  async acquireXBoxToken(oauthAccessToken: string, signal?: AbortSignal) {
+    const xblResponse: XBoxResponse = await this.authenticateXboxLive(oauthAccessToken, signal)
+    const minecraftXstsResponse: XBoxResponse = await this.authorizeXboxLive(
+      xblResponse.Token,
+      'rp://api.minecraftservices.com/',
+      signal,
+    )
+    // The `http://xboxlive.com` relying party is only needed to fetch the
+    // Xbox avatar/gamertag. Some accounts that legitimately own Minecraft
+    // (missing full Xbox Live profile, region/age restrictions, etc.) can
+    // authorize `rp://api.minecraftservices.com/` but fail here. The official
+    // launcher never requests this relying party, which is why those users
+    // report "it runs fine in the regular launcher". Treat it as optional so
+    // a failure here never blocks an otherwise valid login -- the caller just
+    // won't get an Xbox avatar.
+    const xstsResponse: XBoxResponse | undefined = await this.authorizeXboxLive(
+      xblResponse.Token,
+      'http://xboxlive.com',
+      signal,
+    ).catch(() => undefined)
+
+    return { minecraftXstsResponse, liveXstsResponse: xstsResponse }
+  }
+
+  /**
+   * This will return the response with Minecraft access token!
+   *
+   * This access token allows us to launch the game, but, we haven't actually checked if the account owns the game. Everything until here works with a normal Microsoft account!
+   *
+   * @param uhs uhs from {@link XBoxResponse} of {@link acquireXBoxToken}
+   * @param xstsToken You need to get this token from {@link acquireXBoxToken}
+   */
+  /**
+    * Login Minecraft with an Xbox token. This method does exactly one HTTP
+    * attempt -- if you need retry/backoff for transient failures (408, 425,
+    * 429, 5xx), compose it on the caller side by wrapping the `fetch` you
+    * inject into this authenticator. On any non-200 the method throws a
+    * {@link MicrosoftMinecraftXboxLoginError} that carries `status`,
+    * `body`, parsed `retryAfter` (ms) and a `retryable` flag so the UI can
+    * surface a precise message (see issue #1445).
+    *
+    * @param uhs uhs from {@link XBoxResponse} of {@link acquireXBoxToken}
+    * @param xstsToken You need to get this token from {@link acquireXBoxToken}
+    */
+  async loginMinecraftWithXBox(uhs: string, xstsToken: string, signal?: AbortSignal) {
+    const mcResponse = await this.fetch(
+      'https://api.minecraftservices.com/authentication/login_with_xbox',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          identityToken: `XBL3.0 x=${uhs};${xstsToken}`,
+        }),
+        headers: {
+          'content-type': 'application/json',
+        },
+        signal,
+      },
+    )
+
+    if (mcResponse.status === 200) {
+      return (await mcResponse.json()) as MinecraftAuthResponse
+    }
+
+    const transientStatuses = new Set([408, 425, 429, 500, 502, 503, 504])
+    const body = await mcResponse.text()
+    // Parse Retry-After (seconds or HTTP-date) so the UI can show a sensible
+    // wait hint when the caller's retry budget has been exhausted.
+    let retryAfterMs: number | undefined
+    const retryAfter = mcResponse.headers.get('retry-after')
+    if (retryAfter) {
+      const asInt = parseInt(retryAfter, 10)
+      if (!Number.isNaN(asInt)) {
+        retryAfterMs = asInt * 1000
+      } else {
+        const dateMs = Date.parse(retryAfter)
+        if (!Number.isNaN(dateMs)) {
+          retryAfterMs = Math.max(0, dateMs - Date.now())
+        }
+      }
+    }
+
+    throw new MicrosoftMinecraftXboxLoginError(
+      mcResponse.status,
+      body,
+      retryAfterMs,
+      transientStatuses.has(mcResponse.status),
+    )
+  }
+}
